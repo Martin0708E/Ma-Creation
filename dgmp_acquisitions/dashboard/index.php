@@ -168,6 +168,7 @@ $nb_notif = compterNotifications($pdo, $id);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tableau de Bord — DGMP</title>
     <link rel="stylesheet" href="../assets/css/style.css">
+    <link rel="icon" type="image/png" href="/logo_dgmp.png">
 </head>
 <body>
 

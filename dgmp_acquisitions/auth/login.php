@@ -239,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DGMP — Connexion & Inscription</title>
     <link rel="stylesheet" href="../assets/css/style.css">
-    <link rel="icon" href="https://dgmp-acquisitions.up.railway.app/logo_dgmp.png">
+    <link rel="icon" type="image/png" href="/logo_dgmp.png">
     <style>
         /* ===== TABS ===== */
         .auth-tabs {
