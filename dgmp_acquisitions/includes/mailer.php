@@ -25,6 +25,16 @@ function envoyerEmailApprobation($email, $nom, $prenom, $role) {
     <!DOCTYPE html>
     <html>
     <head>
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DGMP — Page</title>
+
+    <!-- FAVICON -->
+    <?php include '../includes/head.php'; ?>
+
+    <link rel="stylesheet" href="../assets/css/style.css">
+</head>
         <meta charset='UTF-8'>
         <style>
             body { font-family: Arial, sans-serif;

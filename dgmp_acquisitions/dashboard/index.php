@@ -163,11 +163,13 @@ $nb_notif = compterNotifications($pdo, $id);
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <?php include '../includes/pwa_head.php'; ?>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tableau de Bord — DGMP</title>
+    <title>Acquisitions Informatiques</title>
+    <!-- FAVICON -->
+    <?php include '../includes/head.php'; ?>
     <link rel="stylesheet" href="../assets/css/style.css">
+    <?php include '../includes/pwa_head.php'; ?>
     <link rel="icon" type="image/png" href="/logo_dgmp.png">
 </head>
 <body>

@@ -237,9 +237,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DGMP — Connexion & Inscription</title>
+    <title>Acquisitions Informatiques</title>
+    <!-- FAVICON -->
+    <link rel="icon" type="image/png"
+          href="../assets/images/logo_dgmp.png">
+    <link rel="shortcut icon"
+          href="../assets/images/logo_dgmp.png">
+    <meta name="theme-color" content="#1a237e">
     <link rel="stylesheet" href="../assets/css/style.css">
-    <link rel="icon" type="image/png" href="/logo_dgmp.png">
     <style>
         /* ===== TABS ===== */
         .auth-tabs {

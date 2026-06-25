@@ -64,7 +64,21 @@ a { text-decoration: none; color: inherit; }
     color: white;
 }
 .login-left-content { text-align: center; }
-.login-left-logo { font-size: 64px; margin-bottom: 16px; }
+.login-left-logo {
+    font-size: 64px;
+    margin-bottom: 16px;
+}
+
+.login-left-logo img,
+.login-logo-img {
+    width: 180px;
+    height: 180px;
+    object-fit: contain;
+    border-radius: 20px;
+    background: white;
+    padding: 10px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+}
 .login-left h1 { font-size: 42px; font-weight: 900; color: var(--accent); }
 .login-left p  { font-size: 14px; opacity: 0.85; margin: 8px 0 30px; }
 .login-features { text-align: left; }
@@ -85,7 +99,21 @@ a { text-decoration: none; color: inherit; }
 }
 .login-card { width: 100%; }
 .login-header { text-align: center; margin-bottom: 30px; }
-.login-icon { font-size: 48px; margin-bottom: 12px; }
+.login-icon {
+    font-size: 48px;
+    margin-bottom: 8px;
+}
+
+.login-icon img,
+.login-icon-img {
+    width: 100px;
+    height: 100px;
+    object-fit: contain;
+    border-radius: 16px;
+    border: 3px solid #1a237e;
+    padding: 6px;
+    background: white;
+}
 .login-header h2 { font-size: 26px; font-weight: 800; color: var(--primary); }
 .login-header p  { color: var(--gray); font-size: 13px; margin-top: 6px; }
 /* Champ mot de passe */

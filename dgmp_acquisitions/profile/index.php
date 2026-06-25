@@ -84,7 +84,9 @@ $rc = $role_colors[$user['role']] ?? ['#1a237e', '🔵'];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mon Profil — DGMP</title>
+    <title>Acquisitions Informatiques</title>
+    <!-- FAVICON -->
+    <?php include '../includes/head.php'; ?>
     <link rel="stylesheet" href="../assets/css/style.css">
     <style>
         /* Force MDP */
