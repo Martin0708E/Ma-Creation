@@ -1,16 +1,20 @@
 FROM php:8.2-apache
 
-# Installer les dépendances système pour PostgreSQL
+# Installer dépendances PostgreSQL
 RUN apt-get update && apt-get install -y libpq-dev
 
-# Installer les extensions PHP pdo et pdo_pgsql
+# Installer extensions PHP
 RUN docker-php-ext-install pdo pdo_pgsql
 
-# Copier votre code dans le dossier du serveur web
+# Activer mod_rewrite
+RUN a2enmod rewrite
+
+# Adapter Apache au PORT Railway
+RUN sed -i 's/80/${PORT}/g' /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf
+
+# Copier projet
 COPY . /var/www/html/
 
-# Donner les droits d'accès
-RUN chown -R www-data:www-data /var/www/html/
+RUN chown -R www-data:www-data /var/www/html
 
-# Exposer le port 80
 EXPOSE 80
