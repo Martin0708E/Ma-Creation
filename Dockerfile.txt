@@ -1,9 +1,16 @@
 FROM php:8.2-cli
 
+# 1. Installer les dépendances pour PostgreSQL
 RUN apt-get update && apt-get install -y libpq-dev
+
+# 2. Installer les extensions pdo et pdo_pgsql
 RUN docker-php-ext-install pdo pdo_pgsql
 
+# 3. Définir le dossier de travail
 WORKDIR /app
+
+# 4. Copier tous les fichiers du projet
 COPY . .
 
+# 5. Lancer le serveur PHP sur le port donné par Railway
 CMD php -S 0.0.0.0:$PORT
