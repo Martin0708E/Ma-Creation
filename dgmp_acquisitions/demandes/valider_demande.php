@@ -7,12 +7,10 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 verifierConnexion();
 
-// ============================================
 // RESTRICTION : RESPONSABLE SEULEMENT
-// ============================================
 if ($_SESSION['role'] !== 'responsable') {
     header('Location: ../dashboard/index.php?erreur=' . urlencode(
-        '⛔ Accès refusé ! Seul le responsable peut valider les demandes.'
+        'Acces refuse ! Seul le responsable peut valider les demandes.'
     ));
     exit();
 }
@@ -25,16 +23,15 @@ $erreur  = clean($_GET['erreur']  ?? '');
 $demandes_attente = $pdo->query("
     SELECT d.*,
            u.nom, u.prenom, u.email,
-           f.nom_entreprise,
            COUNT(dd.id_detail) as nb_articles,
-           COALESCE(SUM(dd.quantite * dd.prix_unitaire_estime), 0) as montant_total
+           COALESCE(SUM(dd.quantite), 0) as total_quantite
     FROM demandes_acquisition d
-    JOIN utilisateurs u ON d.id_utilisateur = u.id_utilisateur
-    LEFT JOIN fournisseurs f ON d.id_fournisseur = f.id_fournisseur
-    LEFT JOIN details_demande dd ON d.id_demande = dd.id_demande
+    JOIN utilisateurs u
+        ON d.id_utilisateur = u.id_utilisateur
+    LEFT JOIN details_demande dd
+        ON d.id_demande = dd.id_demande
     WHERE d.statut = 'en_attente'
-    GROUP BY d.id_demande, u.nom, u.prenom,
-             u.email, f.nom_entreprise
+    GROUP BY d.id_demande, u.nom, u.prenom, u.email
     ORDER BY
         CASE d.priorite
             WHEN 'urgente' THEN 1
@@ -46,29 +43,28 @@ $demandes_attente = $pdo->query("
 ")->fetchAll();
 
 // ============================================
-// TRAITEMENT
+// TRAITEMENT VALIDATION
 // ============================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // Vérifier rôle côté serveur
     if ($_SESSION['role'] !== 'responsable') {
         header('Location: ../dashboard/index.php');
         exit();
     }
 
     $id_demande  = (int)($_POST['id_demande'] ?? 0);
-    $decision    = $_POST['decision'] ?? '';
+    $decision    = $_POST['decision']         ?? '';
     $commentaire = trim($_POST['commentaire'] ?? '');
 
     if (!in_array($decision, ['approuve', 'rejete'])) {
         header('Location: valider_demande.php?erreur=' .
-            urlencode('Décision invalide !'));
+            urlencode('Decision invalide !'));
         exit();
     }
 
     if ($decision === 'rejete' && empty($commentaire)) {
         header('Location: valider_demande.php?erreur=' . urlencode(
-            '⚠️ Commentaire obligatoire pour rejeter !'
+            'Le commentaire est obligatoire pour rejeter !'
         ));
         exit();
     }
@@ -79,11 +75,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Récupérer infos demande
         $info = $pdo->prepare("
             SELECT d.*,
-                   u.id_utilisateur as id_demandeur,
-                   f.nom_entreprise
+                   u.id_utilisateur as id_demandeur
             FROM demandes_acquisition d
-            JOIN utilisateurs u ON d.id_utilisateur = u.id_utilisateur
-            LEFT JOIN fournisseurs f ON d.id_fournisseur = f.id_fournisseur
+            JOIN utilisateurs u
+                ON d.id_utilisateur = u.id_utilisateur
             WHERE d.id_demande = :id
             AND d.statut = 'en_attente'
         ");
@@ -91,94 +86,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $demande = $info->fetch();
 
         if (!$demande) {
-            throw new Exception("Demande introuvable ou déjà traitée !");
+            throw new Exception("Demande introuvable !");
         }
 
-        // 1. ENREGISTRER LA VALIDATION
+        // 1. Enregistrer validation
         $pdo->prepare("
             INSERT INTO validations
-            (id_demande, id_validateur, niveau_validation,
-             decision, commentaire)
+            (id_demande, id_validateur,
+             niveau_validation, decision, commentaire)
             VALUES (:id_d, :id_v, 1, :decision, :commentaire)
         ")->execute([
             ':id_d'        => $id_demande,
             ':id_v'        => $_SESSION['id_utilisateur'],
             ':decision'    => $decision,
-            ':commentaire' => !empty($commentaire) ? $commentaire : null
+            ':commentaire' => !empty($commentaire)
+                              ? $commentaire : null
         ]);
 
-        // 2. METTRE À JOUR STATUT DEMANDE
-        $nouveau_statut = ($decision === 'approuve') ? 'validee' : 'rejetee';
+        // 2. Mettre à jour statut demande
+        $nouveau_statut = ($decision === 'approuve')
+                          ? 'validee' : 'rejetee';
 
         $pdo->prepare("
             UPDATE demandes_acquisition SET
                 statut          = :statut,
                 date_validation = NOW(),
                 commentaire     = :commentaire
-            WHERE id_demande    = :id
+            WHERE id_demande = :id
         ")->execute([
             ':statut'      => $nouveau_statut,
-            ':commentaire' => !empty($commentaire) ? $commentaire : null,
+            ':commentaire' => !empty($commentaire)
+                              ? $commentaire : null,
             ':id'          => $id_demande
         ]);
 
         $ref_commande = '';
 
-        // 3. SI APPROUVÉ → CRÉER COMMANDE
+        // 3. Si approuvé → Créer commande
         if ($decision === 'approuve') {
 
             $ref_commande = 'CMD-' . date('Y') . '-' .
                 str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
 
-            // Calculer montant
-            $stmt_m = $pdo->prepare("
-                SELECT COALESCE(
-                    SUM(quantite * prix_unitaire_estime), 0
-                ) as total
-                FROM details_demande
-                WHERE id_demande = :id
-            ");
-            $stmt_m->execute([':id' => $id_demande]);
-            $montant_total = $stmt_m->fetch()['total'];
-
-            // Créer commande
-            // statut = en_attente_validation car le VALIDATEUR doit valider
+            // Créer commande SANS fournisseur et SANS montant
+            // Le validateur définira le fournisseur et les prix
             $pdo->prepare("
                 INSERT INTO commandes
-                (id_demande, id_fournisseur, reference_commande,
-                 montant_total, date_commande,
-                 date_livraison_prevue, statut)
-                VALUES (:id_d, :id_f, :ref, :montant,
-                        CURRENT_DATE, :date_liv,
-                        'en_attente_validation')
+                (id_demande, reference_commande,
+                 montant_total, date_commande, statut)
+                VALUES
+                (:id_d, :ref, 0, CURRENT_DATE,
+                 'en_attente_validation')
+                RETURNING id_commande
             ")->execute([
-                ':id_d'     => $id_demande,
-                ':id_f'     => $demande['id_fournisseur'],
-                ':ref'      => $ref_commande,
-                ':montant'  => $montant_total,
-                ':date_liv' => !empty($demande['date_livraison_prevue'])
-                               ? $demande['date_livraison_prevue']
-                               : null
+                ':id_d' => $id_demande,
+                ':ref'  => $ref_commande
             ]);
 
-            // Notifier le demandeur
-            $pdo->prepare("
-                INSERT INTO notifications
-                (id_utilisateur, message, type)
-                VALUES (:id, :msg, 'succes')
-            ")->execute([
-                ':id'  => $demande['id_demandeur'],
-                ':msg' => "✅ Votre demande " .
-                          $demande['reference_demande'] .
-                          " a été approuvée par le responsable ! " .
-                          "Commande " . $ref_commande .
-                          " créée - En attente validation validateur."
-            ]);
-
-            // Notifier les VALIDATEURS
+            // Notifier les validateurs
             $validateurs = $pdo->query("
                 SELECT id_utilisateur FROM utilisateurs
-                WHERE role = 'validateur' AND statut = TRUE
+                WHERE role = 'validateur'
+                AND statut = TRUE
             ")->fetchAll();
 
             foreach ($validateurs as $v) {
@@ -188,31 +157,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     VALUES (:id, :msg, 'info')
                 ")->execute([
                     ':id'  => $v['id_utilisateur'],
-                    ':msg' => "🛒 Nouvelle commande " .
+                    ':msg' => "Nouvelle commande " .
                               $ref_commande .
-                              " en attente de votre validation."
+                              " en attente. " .
+                              "Veuillez choisir le fournisseur " .
+                              "et definir les prix."
                 ]);
             }
 
-            // Notifier admins
-            $admins = $pdo->query("
-                SELECT id_utilisateur FROM utilisateurs
-                WHERE role = 'admin' AND statut = TRUE
-            ")->fetchAll();
-
-            foreach ($admins as $a) {
-                $pdo->prepare("
-                    INSERT INTO notifications
-                    (id_utilisateur, message, type)
-                    VALUES (:id, :msg, 'info')
-                ")->execute([
-                    ':id'  => $a['id_utilisateur'],
-                    ':msg' => "📋 Demande " .
-                              $demande['reference_demande'] .
-                              " approuvée. Commande " .
-                              $ref_commande . " créée."
-                ]);
-            }
+            // Notifier le demandeur
+            $pdo->prepare("
+                INSERT INTO notifications
+                (id_utilisateur, message, type)
+                VALUES (:id, :msg, 'succes')
+            ")->execute([
+                ':id'  => $demande['id_demandeur'],
+                ':msg' => "Votre demande " .
+                          $demande['reference_demande'] .
+                          " a ete approuvee ! " .
+                          "Commande " . $ref_commande .
+                          " creee. En attente du validateur."
+            ]);
 
         } else {
             // Notifier rejet
@@ -222,21 +187,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 VALUES (:id, :msg, 'alerte')
             ")->execute([
                 ':id'  => $demande['id_demandeur'],
-                ':msg' => "❌ Votre demande " .
+                ':msg' => "Votre demande " .
                           $demande['reference_demande'] .
-                          " a été rejetée par le responsable. " .
-                          "Motif : " . $commentaire
+                          " a ete rejetee. Motif : " .
+                          $commentaire
             ]);
         }
 
         // Log
         $pdo->prepare("
             INSERT INTO historique_actions
-            (id_utilisateur, action, table_concernee, id_enregistrement)
-            VALUES (:id, :action, 'demandes_acquisition', :id_enreg)
+            (id_utilisateur, action,
+             table_concernee, id_enregistrement)
+            VALUES (:id, :action,
+                    'demandes_acquisition', :id_enreg)
         ")->execute([
             ':id'      => $_SESSION['id_utilisateur'],
-            ':action'  => "Demande " .
+            ':action'  => "Validation demande " .
                           $demande['reference_demande'] .
                           " : " . $decision .
                           ($ref_commande
@@ -248,11 +215,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->commit();
 
         if ($decision === 'approuve') {
-            $msg_s = "✅ Demande approuvée ! " .
-                     "Commande " . $ref_commande .
-                     " créée et envoyée au validateur !";
+            $msg_s = "Demande approuvee ! Commande " .
+                     $ref_commande .
+                     " creee. Le validateur va choisir " .
+                     "le fournisseur et les prix.";
         } else {
-            $msg_s = "❌ Demande rejetée avec succès.";
+            $msg_s = "Demande rejetee avec succes.";
         }
 
         header('Location: valider_demande.php?success=' .
@@ -272,11 +240,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acquisitions Informatiques</title>
-    <!-- FAVICON -->
-    <?php include '../includes/head.php'; ?>
+    <title>Validation Demandes — DGMP</title>
+    <link rel="icon" href="../assets/images/logo_dgmp.png">
     <link rel="stylesheet" href="../assets/css/style.css">
-    <?php include '../includes/pwa_head.php'; ?>
 </head>
 <body>
 
@@ -299,20 +265,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                       style="font-size:15px;padding:10px 16px">
                     ⏳ <?= count($demandes_attente) ?> en attente
                 </span>
-                <span class="badge bg-orange"
-                      style="font-size:12px;padding:8px 12px;
-                             background:#e65100;color:white">
+                <span style="background:#e65100;color:white;
+                             padding:8px 14px;border-radius:8px;
+                             font-size:12px;font-weight:700">
                     🟠 Responsable uniquement
                 </span>
             </div>
         </div>
 
         <?php if ($success): ?>
-            <div class="alert alert-success">✅ <?= $success ?></div>
+        <div class="alert alert-success">✅ <?= $success ?></div>
         <?php endif; ?>
         <?php if ($erreur): ?>
-            <div class="alert alert-danger">⚠️ <?= $erreur ?></div>
+        <div class="alert alert-danger">⚠️ <?= $erreur ?></div>
         <?php endif; ?>
+
+        <!-- Info workflow -->
+        <div class="alert alert-info">
+            ℹ️ <strong>Workflow :</strong>
+            Vous approuvez la demande →
+            Commande créée (SANS fournisseur, SANS prix) →
+            <strong>Le validateur choisira le fournisseur
+            et définira les prix</strong>
+        </div>
 
         <!-- Info responsable -->
         <div class="validateur-info-box"
@@ -345,15 +320,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php else: ?>
 
         <?php foreach ($demandes_attente as $d): ?>
+
+        <?php
+        // Récupérer les articles de la demande
+        $articles_dem = $pdo->prepare("
+            SELECT dd.*, m.nom_materiel,
+                   m.specification_technique,
+                   c.nom_categorie
+            FROM details_demande dd
+            JOIN materiels m ON dd.id_materiel = m.id_materiel
+            JOIN categories_materiel c
+                ON m.id_categorie = c.id_categorie
+            WHERE dd.id_demande = :id
+        ");
+        $articles_dem->execute([':id' => $d['id_demande']]);
+        $articles_dem = $articles_dem->fetchAll();
+        ?>
+
         <div class="validation-card"
              style="border-left-color:#e65100">
 
+            <!-- En-tête -->
             <div class="validation-card-header"
-                 style="background:#fff3e0;border-bottom-color:#ffcc80">
+                 style="background:#fff3e0;
+                        border-bottom-color:#ffcc80">
                 <div>
                     <h3>
                         <?= clean($d['reference_demande']) ?>
-                        &nbsp;<?= getBadgePriorite($d['priorite']) ?>
+                        &nbsp;
+                        <?= getBadgePriorite($d['priorite']) ?>
                     </h3>
                     <p>
                         👤 <strong>
@@ -366,28 +361,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </p>
                 </div>
                 <a href="detail_demande.php?id=<?= $d['id_demande'] ?>"
-                   class="btn btn-sm btn-info" target="_blank">
+                   class="btn btn-sm btn-info"
+                   target="_blank">
                     👁️ Voir détails
                 </a>
             </div>
 
+            <!-- Corps -->
             <div class="validation-card-body">
-                <div class="validation-info-grid">
+
+                <!-- Infos générales -->
+                <div class="validation-info-grid"
+                     style="margin-bottom:16px">
                     <div class="vi-item">
                         <span>📝 Motif :</span>
                         <strong><?= clean($d['motif']) ?></strong>
-                    </div>
-                    <div class="vi-item">
-                        <span>🏢 Fournisseur :</span>
-                        <strong>
-                            <?php if (!empty($d['nom_entreprise'])): ?>
-                                <?= clean($d['nom_entreprise']) ?>
-                            <?php else: ?>
-                                <span style="color:var(--danger)">
-                                    ⚠️ Non défini
-                                </span>
-                            <?php endif; ?>
-                        </strong>
                     </div>
                     <div class="vi-item">
                         <span>🖥️ Articles :</span>
@@ -398,19 +386,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </strong>
                     </div>
                     <div class="vi-item">
-                        <span>💰 Montant :</span>
-                        <strong style="color:var(--primary);
-                                       font-size:16px">
-                            <?= formaterMontant($d['montant_total']) ?>
+                        <span>📦 Quantité totale :</span>
+                        <strong>
+                            <?= $d['total_quantite'] ?> unité(s)
                         </strong>
                     </div>
                 </div>
+
+                <!-- Tableau des articles -->
+                <?php if (!empty($articles_dem)): ?>
+                <div style="border:1px solid #e0e0e0;
+                            border-radius:8px;
+                            overflow:hidden;
+                            margin-bottom:12px">
+                    <table class="table"
+                           style="margin:0">
+                        <thead>
+                            <tr>
+                                <th>Matériel</th>
+                                <th>Catégorie</th>
+                                <th>Spécifications</th>
+                                <th>Quantité</th>
+                                <th>Prix</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($articles_dem as $art): ?>
+                            <tr>
+                                <td>
+                                    <strong>
+                                        <?= clean($art['nom_materiel']) ?>
+                                    </strong>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">
+                                        <?= clean($art['nom_categorie']) ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <small>
+                                        <?= clean($art['specification_technique'] ?? '—') ?>
+                                    </small>
+                                </td>
+                                <td>
+                                    <strong class="badge bg-primary">
+                                        <?= $art['quantite'] ?>
+                                    </strong>
+                                </td>
+                                <td>
+                                    <span style="background:#f3e5f5;
+                                                 border:1px solid #6a1b9a;
+                                                 border-radius:6px;
+                                                 padding:4px 10px;
+                                                 font-size:11px;
+                                                 color:#6a1b9a;
+                                                 font-weight:700">
+                                        🟣 Défini par validateur
+                                    </span>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <?php endif; ?>
+
             </div>
 
+            <!-- Formulaire décision -->
             <div class="validation-card-footer">
                 <form method="POST" action=""
                       onsubmit="return confirmerDecision(this)">
-                    <input type="hidden" name="id_demande"
+                    <input type="hidden"
+                           name="id_demande"
                            value="<?= $d['id_demande'] ?>">
 
                     <div class="form-group">
@@ -440,7 +488,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 value="rejete"
                                 class="btn btn-danger btn-lg"
                                 onclick="decisionChoisie='rejete'">
-                            ❌ Rejeter la Demande
+                            ❌ Rejeter
                         </button>
                     </div>
                 </form>
@@ -457,7 +505,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <?php include '../includes/footer.php'; ?>
 
 <script>
-let decisionChoisie = '';
+var decisionChoisie = '';
 
 function confirmerDecision(form) {
     var commentaire = form.querySelector(
@@ -465,14 +513,17 @@ function confirmerDecision(form) {
     ).value.trim();
 
     if (decisionChoisie === 'rejete' && commentaire === '') {
-        alert('⚠️ Commentaire obligatoire pour rejeter !');
+        alert('Commentaire obligatoire pour rejeter !');
         form.querySelector('textarea').focus();
         return false;
     }
 
     var msg = decisionChoisie === 'approuve'
-        ? '✅ Confirmer l\'approbation ?\n\n→ Une commande sera créée et envoyée au validateur !'
-        : '❌ Confirmer le rejet ?\n\n→ Le demandeur sera notifié.';
+        ? 'Confirmer l\'approbation ?\n\n' +
+          'Une commande sera creee.\n' +
+          'Le validateur choisira le fournisseur et les prix.'
+        : 'Confirmer le rejet ?\n\n' +
+          'Le demandeur sera notifie.';
 
     return confirm(msg);
 }
