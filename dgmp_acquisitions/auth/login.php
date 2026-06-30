@@ -1,21 +1,13 @@
 <?php
+session_start();
 require_once(__DIR__ . '/../config/database.php');
-?>
-
-
-<?php
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-require_once '../config/database.php';
 
 // Rediriger si déjà connecté
 if (isset($_SESSION['utilisateur'])) {
     header('Location: ../dashboard/index.php');
-    exit();
 }
 
+// reste de votre code...
 $erreur_login        = '';
 $erreur_inscription  = '';
 $success_inscription = '';
