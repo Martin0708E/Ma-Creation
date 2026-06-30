@@ -95,27 +95,12 @@ a { text-decoration: none; color: inherit; }
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 40px;
+    padding: 10px;
 }
 .login-card { width: 100%; }
-.login-header { text-align: center; margin-bottom: 30px; }
-.login-icon {
-    font-size: 48px;
-    margin-bottom: 8px;
-}
-
-.login-icon img,
-.login-icon-img {
-    width: 100px;
-    height: 100px;
-    object-fit: contain;
-    border-radius: 16px;
-    border: 3px solid #1a237e;
-    padding: 6px;
-    background: white;
-}
-.login-header h2 { font-size: 26px; font-weight: 800; color: var(--primary); }
-.login-header p  { color: var(--gray); font-size: 13px; margin-top: 6px; }
+.login-header { text-align: center; margin-bottom: 40px; }
+.login-header h2 { font-size: 36px; font-weight: 800; color: var(--primary); }
+.login-header p  { color: var(--gray); font-size: 16px; margin-top: 6px; }
 /* Champ mot de passe */
 .password-group { position: relative; display: flex; }
 .password-group .form-control { border-radius: var(--radius) 0 0 var(--radius); }
