@@ -20,23 +20,78 @@ $materiels = $pdo->query("
     ORDER BY c.nom_categorie, m.nom_materiel
 ")->fetchAll();
 
-// Grouper par catégorie
+// Récupérer catégories
+$categories_list = $pdo->query("
+    SELECT * FROM categories_materiel
+    ORDER BY nom_categorie
+")->fetchAll();
+
+// Grouper matériels par catégorie
 $categories = [];
 foreach ($materiels as $m) {
     $categories[$m['nom_categorie']][] = $m;
 }
 
 // ============================================
-// TRAITEMENT FORMULAIRE
+// TRAITEMENT AJOUT MATÉRIEL PAR L'UTILISATEUR
 // ============================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['action'])
+    && $_POST['action'] === 'ajouter_materiel') {
+
+    $nom_mat  = trim($_POST['nouveau_nom_materiel']  ?? '');
+    $cat_mat  = (int)($_POST['nouvelle_categorie']   ?? 0);
+    $spec_mat = trim($_POST['nouvelle_specification'] ?? '');
+    $unite_mat = trim($_POST['nouvelle_unite']        ?? 'Unite');
+
+    if (empty($nom_mat) || !$cat_mat) {
+        $erreur = "Nom et catégorie du matériel obligatoires !";
+    } else {
+        try {
+            $pdo->prepare("
+                INSERT INTO materiels
+                (id_categorie, nom_materiel,
+                 specification_technique, unite_mesure)
+                VALUES (:cat, :nom, :spec, :unite)
+            ")->execute([
+                ':cat'   => $cat_mat,
+                ':nom'   => $nom_mat,
+                ':spec'  => !empty($spec_mat) ? $spec_mat : null,
+                ':unite' => $unite_mat
+            ]);
+
+            logAction($pdo, $_SESSION['id_utilisateur'],
+                "Ajout materiel par utilisateur: " . $nom_mat,
+                'materiels');
+
+            // Recharger la page pour voir le nouveau matériel
+            header('Location: nouvelle_demande.php?mat_ajoute=' .
+                urlencode($nom_mat));
+            exit();
+
+        } catch (Exception $e) {
+            $erreur = "Erreur ajout matériel : " . $e->getMessage();
+        }
+    }
+}
+
+// Message matériel ajouté
+$mat_ajoute = isset($_GET['mat_ajoute'])
+              ? htmlspecialchars($_GET['mat_ajoute']) : '';
+
+// ============================================
+// TRAITEMENT DEMANDE
+// ============================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && (!isset($_POST['action'])
+        || $_POST['action'] !== 'ajouter_materiel')) {
 
     $departement  = trim($_POST['departement'] ?? '');
     $motif        = trim($_POST['motif']       ?? '');
     $priorite     = $_POST['priorite']         ?? 'normale';
     $mat_selected = $_POST['materiels']        ?? [];
 
-    // Articles valides (quantité seulement)
+    // Articles valides
     $articles_valides = [];
     foreach ($mat_selected as $id_mat => $detail) {
         if (!empty($detail['quantite']) &&
@@ -61,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $ref_demande = 'DAI-' . date('Y') . '-' .
                 str_pad(rand(1, 9999), 4, '0', STR_PAD_LEFT);
 
-            // INSERT demande SANS fournisseur SANS budget
+            // INSERT demande
             $stmt = $pdo->prepare("
                 INSERT INTO demandes_acquisition
                 (reference_demande, id_utilisateur,
@@ -81,14 +136,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $id_demande = $stmt->fetch()['id_demande'];
 
-            // Insérer détails SANS prix
-            // Le prix sera saisi par le validateur
+            // Insérer détails
             foreach ($articles_valides as $id_mat => $detail) {
                 $pdo->prepare("
                     INSERT INTO details_demande
-                    (id_demande, id_materiel,
-                     quantite, prix_unitaire_estime)
-                    VALUES (:id_d, :id_m, :qte, NULL)
+                    (id_demande, id_materiel, quantite)
+                    VALUES (:id_d, :id_m, :qte)
                 ")->execute([
                     ':id_d' => $id_demande,
                     ':id_m' => (int)$id_mat,
@@ -143,6 +196,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+
+// Recharger matériels après ajout
+$materiels = $pdo->query("
+    SELECT m.*, c.nom_categorie
+    FROM materiels m
+    JOIN categories_materiel c
+        ON m.id_categorie = c.id_categorie
+    ORDER BY c.nom_categorie, m.nom_materiel
+")->fetchAll();
+
+$categories = [];
+foreach ($materiels as $m) {
+    $categories[$m['nom_categorie']][] = $m;
+}
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -165,6 +232,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="page-header">
             <div>
                 <h1>➕ Nouvelle Demande d'Acquisition</h1>
+                <p class="page-subtitle">
+                    Le fournisseur et les prix seront
+                    définis par le validateur
+                </p>
             </div>
             <a href="index.php" class="btn btn-secondary">
                 ← Retour
@@ -172,20 +243,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <?php if ($erreur): ?>
-            <div class="alert alert-danger">
-                ⚠️ <?= $erreur ?>
-            </div>
+        <div class="alert alert-danger">⚠️ <?= $erreur ?></div>
+        <?php endif; ?>
+
+        <?php if ($mat_ajoute): ?>
+        <div class="alert alert-success">
+            ✅ Matériel "<strong><?= $mat_ajoute ?></strong>"
+            ajouté avec succès !
+            Vous pouvez maintenant le sélectionner.
+        </div>
         <?php endif; ?>
 
         <!-- Workflow -->
 
         <!-- Info -->
         <div class="alert alert-info">
-            ℹ️ <strong>Information :</strong>
-            Vous choisissez uniquement les matériels et les quantités.
-            Le <strong>fournisseur</strong> et les
-            <strong>prix unitaires</strong> seront définis
-            par le validateur selon le fournisseur choisi.
+            ℹ️ Le <strong>fournisseur</strong> et les
+            <strong>prix</strong> seront définis par le validateur.
+            Choisissez uniquement les
+            <strong>matériels</strong> et les
+            <strong>quantités</strong>.
+            <br>
+            📦 Si le matériel que vous cherchez n'existe pas,
+            cliquez sur
+            "<strong>➕ Ajouter un nouveau matériel</strong>".
         </div>
 
         <form method="POST" action="" id="formDemande">
@@ -213,7 +294,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div class="form-group col-6">
                             <label>⚡ Priorité *</label>
                             <select name="priorite"
-                                    class="form-control" required>
+                                    class="form-control"
+                                    required>
                                 <option value="normale"
                                     <?= (($_POST['priorite'] ?? 'normale') === 'normale') ? 'selected' : '' ?>>
                                     🟢 Normale
@@ -248,15 +330,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="card mb-3">
                 <div class="card-header">
                     <h2>🖥️ Matériels à Acquérir *</h2>
-                    <span class="badge bg-info" id="nb_sel">
-                        0 sélectionné(s)
-                    </span>
+                    <div class="header-right">
+                        <span class="badge bg-info" id="nb_sel">
+                            0 sélectionné(s)
+                        </span>
+                        <!-- BOUTON AJOUTER MATÉRIEL -->
+                        <button type="button"
+                                onclick="ouvrirModal('modalAjouterMateriel')"
+                                class="btn btn-sm btn-success">
+                            ➕ Nouveau Matériel
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
+
+                    <div class="alert alert-warning"
+                         style="margin-bottom:14px">
+                        ⚠️ Choisissez les matériels et les quantités.
+                        <br>
+                        📦 Matériel introuvable ?
+                        → Cliquez sur
+                        "<strong>➕ Nouveau Matériel</strong>"
+                        pour l'ajouter !
+                    </div>
 
                     <?php if (empty($materiels)): ?>
                     <div class="alert alert-danger">
                         ❌ Aucun matériel disponible !
+                        <button type="button"
+                                onclick="ouvrirModal('modalAjouterMateriel')"
+                                class="btn btn-sm btn-success"
+                                style="margin-left:10px">
+                            ➕ Ajouter un matériel
+                        </button>
                     </div>
                     <?php else: ?>
 
@@ -271,8 +377,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <th width="40">✓</th>
                                     <th>Matériel</th>
                                     <th>Spécifications</th>
-                                    <th width="120">Quantité *</th>
-                                    <th width="180">Prix Unitaire</th>
+                                    <th width="110">Quantité *</th>
+                                    <th>Prix</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -299,7 +405,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         </small>
                                     </td>
                                     <td>
-                                        <!-- Quantité MODIFIABLE -->
                                         <input type="number"
                                                name="materiels[<?= $m['id_materiel'] ?>][quantite]"
                                                id="qte_<?= $m['id_materiel'] ?>"
@@ -308,15 +413,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                disabled>
                                     </td>
                                     <td>
-                                        <!-- Prix NON MODIFIABLE -->
-                                        <div style="background:#f5f5f5;
-                                                    border:2px dashed #ccc;
+                                        <div style="background:#f3e5f5;
+                                                    border:2px solid #6a1b9a;
                                                     border-radius:8px;
-                                                    padding:6px 12px;
-                                                    color:#757575;
-                                                    font-size:13px;
-                                                    text-align:center">
-                                            🟣 Défini par le validateur
+                                                    padding:4px 10px;
+                                                    font-size:11px;
+                                                    color:#6a1b9a;
+                                                    font-weight:700">
+                                            🟣 Défini par validateur
                                         </div>
                                     </td>
                                 </tr>
@@ -345,11 +449,116 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </main>
 </div>
 
+<!-- ============================================ -->
+<!-- MODAL : AJOUTER NOUVEAU MATÉRIEL             -->
+<!-- ============================================ -->
+<div class="modal-overlay" id="modalAjouterMateriel">
+    <div class="modal-box">
+        <div class="modal-header"
+             style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9)">
+            <h3 style="color:#2e7d32">
+                ➕ Ajouter un Nouveau Matériel
+            </h3>
+            <button onclick="fermerModal('modalAjouterMateriel')"
+                    class="modal-close">✕</button>
+        </div>
+
+        <!-- Formulaire séparé pour l'ajout matériel -->
+        <form method="POST" action=""
+              id="formAjouterMateriel">
+            <input type="hidden"
+                   name="action"
+                   value="ajouter_materiel">
+
+            <div class="modal-body">
+
+                <div class="form-group">
+                    <label>📦 Catégorie *</label>
+                    <select name="nouvelle_categorie"
+                            class="form-control"
+                            required>
+                        <option value="">-- Choisir --</option>
+                        <?php foreach ($categories_list as $cat): ?>
+                        <option value="<?= $cat['id_categorie'] ?>">
+                            <?= clean($cat['nom_categorie']) ?>
+                        </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>🖥️ Nom du Matériel *</label>
+                    <input type="text"
+                           name="nouveau_nom_materiel"
+                           class="form-control"
+                           placeholder="Ex: Scanner HP ScanJet Pro 3500"
+                           required>
+                </div>
+
+                <div class="form-group">
+                    <label>⚙️ Spécifications Techniques</label>
+                    <textarea name="nouvelle_specification"
+                              class="form-control"
+                              rows="2"
+                              placeholder="Ex: A4, USB 3.0, 25ppm, Recto-verso">
+                    </textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>📏 Unité de Mesure</label>
+                    <select name="nouvelle_unite"
+                            class="form-control">
+                        <option value="Unite">Unité</option>
+                        <option value="Licence">Licence</option>
+                        <option value="Boite">Boîte</option>
+                        <option value="Lot">Lot</option>
+                        <option value="Bobine">Bobine</option>
+                        <option value="Metre">Mètre</option>
+                    </select>
+                </div>
+
+                <div class="alert alert-info"
+                     style="margin-top:8px">
+                    ℹ️ Le <strong>prix</strong> sera défini par
+                    le <strong>validateur</strong> lors de la
+                    validation de la commande.
+                </div>
+
+            </div>
+            <div class="modal-footer">
+                <button type="button"
+                        onclick="fermerModal('modalAjouterMateriel')"
+                        class="btn btn-secondary">
+                    Annuler
+                </button>
+                <button type="submit"
+                        class="btn btn-success">
+                    ➕ Ajouter ce Matériel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <?php include '../includes/footer.php'; ?>
 
 <script>
 var nbSel = 0;
 
+// Ouvrir/fermer modal
+function ouvrirModal(id) {
+    document.getElementById(id).classList.add('show');
+}
+function fermerModal(id) {
+    document.getElementById(id).classList.remove('show');
+}
+document.querySelectorAll('.modal-overlay').forEach(function(m) {
+    m.addEventListener('click', function(e) {
+        if (e.target === this) fermerModal(this.id);
+    });
+});
+
+// Toggle ligne matériel
 function toggleRow(checkbox) {
     var id  = checkbox.dataset.id;
     var row = document.getElementById('row_' + id);
@@ -370,7 +579,9 @@ function toggleRow(checkbox) {
         nbSel + ' sélectionné(s)';
 }
 
-document.getElementById('formDemande').addEventListener('submit', function(e) {
+// Validation formulaire demande
+document.getElementById('formDemande')
+        .addEventListener('submit', function(e) {
     var dept    = document.querySelector('[name="departement"]').value.trim();
     var motif   = document.querySelector('[name="motif"]').value.trim();
     var checked = document.querySelectorAll('.materiel-check:checked');
@@ -387,7 +598,27 @@ document.getElementById('formDemande').addEventListener('submit', function(e) {
     }
     if (checked.length === 0) {
         e.preventDefault();
-        alert('Sélectionnez au moins un matériel !');
+        alert('Sélectionnez au moins un matériel !\n\n' +
+              'Si le matériel n\'existe pas, cliquez sur ' +
+              '"➕ Nouveau Matériel" pour l\'ajouter.');
+        return;
+    }
+});
+
+// Validation formulaire ajout matériel
+document.getElementById('formAjouterMateriel')
+        .addEventListener('submit', function(e) {
+    var nom = this.querySelector('[name="nouveau_nom_materiel"]').value.trim();
+    var cat = this.querySelector('[name="nouvelle_categorie"]').value;
+
+    if (!nom) {
+        e.preventDefault();
+        alert('Le nom du matériel est obligatoire !');
+        return;
+    }
+    if (!cat) {
+        e.preventDefault();
+        alert('Choisissez une catégorie !');
         return;
     }
 });
