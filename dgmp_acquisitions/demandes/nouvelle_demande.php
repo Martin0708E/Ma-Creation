@@ -165,10 +165,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="page-header">
             <div>
                 <h1>➕ Nouvelle Demande d'Acquisition</h1>
-                <p class="page-subtitle">
-                    Le fournisseur et les prix seront définis
-                    par le validateur
-                </p>
             </div>
             <a href="index.php" class="btn btn-secondary">
                 ← Retour
@@ -182,27 +178,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <!-- Workflow -->
-        <div class="workflow-steps">
-            <div class="workflow-step active">
-                <div class="ws-icon">📋</div>
-                <div class="ws-label">1. Demande</div>
-            </div>
-            <div class="workflow-arrow">→</div>
-            <div class="workflow-step">
-                <div class="ws-icon">🟠</div>
-                <div class="ws-label">2. Responsable</div>
-            </div>
-            <div class="workflow-arrow">→</div>
-            <div class="workflow-step">
-                <div class="ws-icon">🟣</div>
-                <div class="ws-label">3. Validateur + Prix</div>
-            </div>
-            <div class="workflow-arrow">→</div>
-            <div class="workflow-step">
-                <div class="ws-icon">📦</div>
-                <div class="ws-label">4. Livraison</div>
-            </div>
-        </div>
 
         <!-- Info -->
         <div class="alert alert-info">
@@ -278,14 +253,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </span>
                 </div>
                 <div class="card-body">
-
-                    <div class="alert alert-warning"
-                         style="margin-bottom:14px">
-                        ⚠️ Choisissez uniquement les
-                        <strong>matériels</strong> et les
-                        <strong>quantités</strong>.
-                        Les prix seront saisis par le validateur.
-                    </div>
 
                     <?php if (empty($materiels)): ?>
                     <div class="alert alert-danger">
